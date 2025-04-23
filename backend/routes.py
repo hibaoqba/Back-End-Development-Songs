@@ -4,6 +4,8 @@ import json
 import pymongo
 from flask import jsonify, request, make_response, abort, url_for  # noqa; F401
 from pymongo import MongoClient
+from flask import Blueprint
+from bson.objectid import ObjectId
 from bson import json_util
 from pymongo.errors import OperationFailure
 from pymongo.results import InsertOneResult
@@ -51,3 +53,73 @@ def parse_json(data):
 ######################################################################
 # INSERT CODE HERE
 ######################################################################
+routes = Blueprint("routes", __name__)
+songs_collection = db["songs"]
+@routes.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "OK"}), 200
+
+@routes.route("/count", methods=["GET"])
+def count():
+    total = db.songs.count_documents({})
+    return jsonify({"count": total}), 200
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "OK"}), 200
+
+@app.route("/count")
+def count():
+    """Return the length of the documents in the collection"""
+    count = collection.count_documents({})  # Empty filter to count all documents
+
+    return jsonify({"count": count}), 200  # HTTP OK response code
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+@app.route("/song", methods=["GET"])
+def songs():
+    """Fetch all songs from the database and return them"""
+    try:
+        songs_list = list(songs_collection.find({}))  # Get all documents from the songs collection
+        # Convert MongoDB documents to JSON serializable format
+        for song in songs_list:
+            song["_id"] = str(song["_id"])  # Convert ObjectId to string
+        return jsonify({"songs": songs_list}), 200  # Return the songs list with HTTP 200 OK
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500  # Handle any errors
+
+
+@app.route('/song/<int:id>', methods=["PUT"])
+def update_song(id):
+    try:
+        data = request.get_json()
+
+        song = db.songs.find_one({"id": id})
+
+        if song:
+            db.songs.update_one(
+                {"id": id},
+                {"$set": {
+                    "title": data.get("title", song.get("title")),
+                    "lyrics": data.get("lyrics", song.get("lyrics"))
+                }}
+            )
+            updated_song = db.songs.find_one({"id": id})
+            updated_song["_id"] = str(updated_song["_id"])  # Fix serialization error
+            return jsonify(updated_song), 200
+        else:
+            return jsonify({"message": "song not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/song/<int:id>', methods=["DELETE"])
+def delete_song(id):
+    try:
+        result = db.songs.delete_one({"id": id})
+        if result.deleted_count == 0:
+            return jsonify({"message": "song not found"}), 404
+        return '', 204
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
